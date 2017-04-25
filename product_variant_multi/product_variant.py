@@ -24,8 +24,9 @@
 #
 ##############################################################################
 
+from openerp import api, fields as Fields
 from openerp.osv import fields, osv, orm
-import openerp.addons.decimal_precision as dp
+from openerp.addons import decimal_precision as dp
 # Lib to eval python code with security
 from openerp.tools.safe_eval import safe_eval
 from openerp.tools.translate import _
@@ -560,18 +561,6 @@ class product_product(orm.Model):
                 context=context)
         return result
 
-    def _product_lst_price(self, cr, uid, ids, name, arg, context=None):
-        if context is None:
-            context = {}
-        result = super(product_product, self)._product_lst_price(cr, uid, ids, name, arg,
-                                                                 context=context)
-        result = self.compute_dimension_extra_price(cr, uid, ids, result,
-                                                    product_price_extra='price_extra',
-                                                    dim_price_margin='price_margin',
-                                                    dim_price_extra='price_extra',
-                                                    context=context)
-        return result
-
     def copy(self, cr, uid, id, default=None, context=None):
         if default is None:
             default = {}
@@ -599,11 +588,6 @@ class product_product(orm.Model):
             domain="[('product_tmpl_id','=',product_tmpl_id)]"),
         'cost_price_extra': fields.float('Purchase Extra Cost',
                                          digits_compute=dp.get_precision('Purchase Price')),
-        'lst_price': fields.function(_product_lst_price,
-                                     method=True,
-                                     type='float',
-                                     string='List Price',
-                                     digits_compute=dp.get_precision('Sale Price')),
         #the way the weight are implemented are not clean at all,
         #we should redesign the module product form the addons
         #in order to get something correclty.
@@ -637,6 +621,24 @@ class product_product(orm.Model):
         'additional_volume': fields.float('Additional Volume',
                                           help="The additional volume in Kg."),
     }
+
+    price_extra = Fields.Float(
+        string='Variant Extra Price', compute='_compute_price_extra',
+        digits_compute=dp.get_precision('Product Price'),
+        store=True, readonly=True, default=0.0,
+        help='This is the sum of the extra price of all attributes',
+    )
+
+    @api.one
+    @api.depends('dimension_value_ids', 'dimension_value_ids.price_extra')
+    def _compute_price_extra(self):
+        """
+        """
+        price_extra = 0.0
+        for dimension in self.dimension_value_ids:
+            price_extra += dimension.price_extra
+
+        self.price_extra = price_extra
 
     _constraints = [
         (_check_dimension_values, 'Error msg in raise', ['dimension_value_ids']),
