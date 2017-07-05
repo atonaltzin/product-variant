@@ -492,75 +492,6 @@ class product_product(orm.Model):
                                        "for the same dimension type.") % product.name)
         return True
 
-    def compute_product_dimension_extra_price(self, cr, uid, product_id,
-                                              product_price_extra=False, dim_price_margin=False,
-                                              dim_price_extra=False, context=None):
-        if context is None:
-            context = {}
-        dimension_extra = 0.0
-        product = self.browse(cr, uid, product_id, context=context)
-        for dim in product.dimension_value_ids:
-            if product_price_extra and dim_price_margin and dim_price_extra:
-                dimension_extra += (safe_eval('product.' + product_price_extra,
-                                              {'product': product})
-                                    * safe_eval('dim.' + dim_price_margin,
-                                                {'dim': dim})
-                                    + safe_eval('dim.' + dim_price_extra,
-                                                {'dim': dim}))
-            elif not product_price_extra and not dim_price_margin and dim_price_extra:
-                dimension_extra += safe_eval('dim.' + dim_price_extra, {'dim': dim})
-            elif product_price_extra and dim_price_margin and not dim_price_extra:
-                dimension_extra += (safe_eval('product.' + product_price_extra,
-                                              {'product': product})
-                                    * safe_eval('dim.' + dim_price_margin,
-                                                {'dim': dim}))
-            elif product_price_extra and not dim_price_margin and dim_price_extra:
-                dimension_extra += (safe_eval('product.' + product_price_extra,
-                                              {'product': product})
-                                    + safe_eval('dim.' + dim_price_extra, {'dim': dim}))
-
-        if 'uom' in context:
-            product_uom_obj = self.pool.get('product.uom')
-            uom = product.uos_id or product.uom_id
-            dimension_extra = product_uom_obj._compute_price(cr, uid, uom.id,
-                                                             dimension_extra, context['uom'])
-        return dimension_extra
-
-    def compute_dimension_extra_price(self, cr, uid, ids, result, product_price_extra=False,
-                                      dim_price_margin=False, dim_price_extra=False, context=None):
-        if context is None:
-            context = {}
-        for product in self.browse(cr, uid, ids, context=context):
-            dimension_extra = self.compute_product_dimension_extra_price(
-                cr, uid, product.id,
-                product_price_extra=product_price_extra,
-                dim_price_margin=dim_price_margin,
-                dim_price_extra=dim_price_extra,
-                context=context)
-            result[product.id] += dimension_extra
-        return result
-
-    def price_get(self, cr, uid, ids, ptype='list_price', context=None):
-        if context is None:
-            context = {}
-        result = super(product_product, self).price_get(cr, uid, ids, ptype, context=context)
-        if ptype == 'list_price':
-            #TODO check if the price_margin on the dimension is very usefull,
-            # maybe we will remove it
-            result = self.compute_dimension_extra_price(
-                cr, uid, ids, result,
-                product_price_extra='price_extra',
-                dim_price_margin='price_margin',
-                dim_price_extra='price_extra',
-                context=context)
-        elif ptype == 'standard_price':
-            result = self.compute_dimension_extra_price(
-                cr, uid, ids, result,
-                product_price_extra='cost_price_extra',
-                dim_price_extra='cost_price_extra',
-                context=context)
-        return result
-
     def copy(self, cr, uid, id, default=None, context=None):
         if default is None:
             default = {}
@@ -630,9 +561,10 @@ class product_product(orm.Model):
     )
 
     @api.one
-    @api.depends('dimension_value_ids', 'dimension_value_ids.price_extra')
+    @api.depends('dimension_value_ids.price_extra', 'dimension_value_ids')
     def _compute_price_extra(self):
-        """
+        """Iterate dimension values to compute the price extra that needs
+        to be added on top of list price for given product.
         """
         price_extra = 0.0
         for dimension in self.dimension_value_ids:
