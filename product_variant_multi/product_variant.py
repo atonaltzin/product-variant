@@ -517,8 +517,7 @@ class product_product(orm.Model):
             'product_id', 'dimension_id',
             'Dimensions',
             domain="[('product_tmpl_id','=',product_tmpl_id)]"),
-        'cost_price_extra': fields.float('Purchase Extra Cost',
-                                         digits_compute=dp.get_precision('Purchase Price')),
+
         #the way the weight are implemented are not clean at all,
         #we should redesign the module product form the addons
         #in order to get something correclty.
@@ -553,24 +552,42 @@ class product_product(orm.Model):
                                           help="The additional volume in Kg."),
     }
 
+    cost_price_extra = Fields.Float(
+        string='Purchase Extra Cost', compute='_compute_price_extra',
+        digits_compute=dp.get_precision('Purchase Price'),
+        store=True, readonly=True, default=0.0,
+    )
     price_extra = Fields.Float(
         string='Variant Extra Price', compute='_compute_price_extra',
         digits_compute=dp.get_precision('Product Price'),
         store=True, readonly=True, default=0.0,
         help='This is the sum of the extra price of all attributes',
     )
-
+    
     @api.one
-    @api.depends('dimension_value_ids.price_extra', 'dimension_value_ids')
+    @api.depends(
+        'dimension_value_ids.price_extra', 'dimension_value_ids.cost_price_extra',
+        'dimension_value_ids',
+    )
     def _compute_price_extra(self):
-        """Iterate dimension values to compute the price extra that needs
-        to be added on top of list price for given product.
-        """
+
+        """this function calculates the extra prices generated
+        from the variants of the products, whether they are
+        buying or selling prices
+        
+        @return: price_extra Is the extra price for the
+        product for sale
+        @return: cost_price_extra It is the extra price
+        derived cost of buying the products
+        """ 
         price_extra = 0.0
+        cost_extra = 0.0
         for dimension in self.dimension_value_ids:
             price_extra += dimension.price_extra
+            cost_extra += dimension.cost_price_extra
 
         self.price_extra = price_extra
+        self.cost_price_extra = cost_extra
 
     _constraints = [
         (_check_dimension_values, 'Error msg in raise', ['dimension_value_ids']),
